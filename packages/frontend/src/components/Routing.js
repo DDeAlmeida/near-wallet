@@ -18,6 +18,7 @@ import { selectAccountSlice } from '../redux/slices/account';
 import { actions as tokenFiatValueActions } from '../redux/slices/tokenFiatValues';
 import { LoginWrapper } from '../routes/LoginWrapper';
 import translations_en from '../translations/en.global.json';
+import translations_fr from '../translations/fr.global.json';
 import translations_pt from '../translations/pt.global.json';
 import translations_ru from '../translations/ru.global.json';
 import translations_vi from '../translations/vi.global.json';
@@ -131,6 +132,7 @@ class Routing extends Component {
 
         const languages = [
             { name: "English", code: "en" },
+            { name: "Français", code: "fr" },
             { name: "Português", code: "pt" },
             { name: "Русский", code: "ru" },
             { name: "Tiếng Việt", code: "vi" },
@@ -161,6 +163,7 @@ class Routing extends Component {
 
         // TODO: Figure out how to load only necessary translations dynamically
         this.props.addTranslationForLanguage(translations_en, "en");
+        this.props.addTranslationForLanguage(translations_fr, "fr");
         this.props.addTranslationForLanguage(translations_pt, "pt");
         this.props.addTranslationForLanguage(translations_ru, "ru");
         this.props.addTranslationForLanguage(translations_zh_hans, "zh-hans");
