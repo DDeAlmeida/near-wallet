@@ -391,7 +391,7 @@ export const { staking } = createActions({
             if (!accountIds) {
                 const rpcValidators = [...current_validators, ...next_validators, ...current_proposals].map(({ account_id }) => account_id);
 
-                const networkId = wallet.connection.provider.connection.url.indexOf(MAINNET) > -1 ? MAINNET : TESTNET;
+                const networkId = 'guildnet';
                 const allStakingPools = (await fetch(`${ACCOUNT_HELPER_URL}/stakingPools`).then((r) => r.json()));
                 const prefix = getValidatorRegExp(networkId);
                 accountIds = [...new Set([...rpcValidators, ...allStakingPools])]
