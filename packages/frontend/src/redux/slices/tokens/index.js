@@ -5,8 +5,10 @@ import { createSelector } from 'reselect';
 
 import { WHITELISTED_CONTRACTS } from '../../../config';
 import FungibleTokens from '../../../services/FungibleTokens';
+import { selectBalance } from '../account';
 import createParameterSelector from '../createParameterSelector';
 import initialErrorState from '../initialErrorState';
+import { selectNearTokenFiatValueUSD } from '../tokenFiatValues';
 
 const SLICE_NAME = 'tokens';
 
@@ -25,12 +27,12 @@ const initialOwnedTokenState = {
     error: initialErrorState
 };
 
-async function getCachedContractMetadataOrFetch(contractName, accountId, state) {
+async function getCachedContractMetadataOrFetch(contractName, state) {
     let contractMetadata = selectOneContractMetadata(state, { contractName });
     if (contractMetadata) {
         return contractMetadata;
     }
-    return FungibleTokens.getMetadata({ contractName, accountId });
+    return FungibleTokens.getMetadata({ contractName });
 }
 
 const fetchOwnedTokensForContract = createAsyncThunk(
@@ -58,21 +60,41 @@ const fetchTokens = createAsyncThunk(
     async ({ accountId }, thunkAPI) => {
         const { dispatch, getState } = thunkAPI;
 
-        const likelyContracts = [...new Set([...(await FungibleTokens.getLikelyTokenContracts({ accountId })), ...WHITELISTED_CONTRACTS])];
+        const likelyContracts = [...new Set([...(await FungibleTokens.getLikelyTokenContracts({ accountId })), ...WHITELISTED_CONTRACTS])];
 
         await Promise.all(likelyContracts.map(async contractName => {
             const { actions: { setContractMetadata } } = tokensSlice;
             try {
-                const contractMetadata = await getCachedContractMetadataOrFetch(contractName, accountId, getState());
+                const contractMetadata = await getCachedContractMetadataOrFetch(contractName, getState());
                 if (!selectOneContractMetadata(getState(), { contractName })) {
                     dispatch(setContractMetadata({ contractName, metadata: contractMetadata }));
                 }
-                await dispatch(fetchOwnedTokensForContract({ accountId, contractName, contractMetadata }));
+                await dispatch(fetchOwnedTokensForContract({ accountId, contractName }));
             } catch (e) {
                 // Continue loading other likely contracts on failures
                 console.warn(`Failed to load FT for ${contractName}`, e);
             }
         }));
+    }
+);
+
+const fetchToken = createAsyncThunk(
+    `${SLICE_NAME}/fetchToken`,
+    async ({ contractName, accountId }, thunkAPI) => {
+        const { dispatch, getState } = thunkAPI;
+        const { actions: { setContractMetadata } } = tokensSlice;
+        try {
+            const contractMetadata = await getCachedContractMetadataOrFetch(contractName, getState());
+            if (!selectOneContractMetadata(getState(), { contractName })) {
+                dispatch(setContractMetadata({ contractName, metadata: contractMetadata }));
+            }
+            if(accountId) {
+                await dispatch(fetchOwnedTokensForContract({ accountId, contractName }));
+            }
+        } catch (e) {
+            // Continue loading other likely contracts on failures
+            console.warn(`Failed to load FT for ${contractName}`, e);
+        }
     }
 );
 
@@ -102,9 +124,9 @@ const tokensSlice = createSlice({
             set(state, ['ownedTokens', 'byAccountId', accountId, contractName, 'loading'], false);
             set(state, ['ownedTokens', 'byAccountId', accountId, contractName, 'error'], initialErrorState);
         });
-        builder.addCase(fetchOwnedTokensForContract.rejected, (state, { meta,  error }) => {
+        builder.addCase(fetchOwnedTokensForContract.rejected, (state, { meta, error }) => {
             const { accountId, contractName } = meta.arg;
-            
+
             set(state, ['ownedTokens', 'byAccountId', accountId, contractName, 'loading'], false);
             set(state, ['ownedTokens', 'byAccountId', accountId, contractName, 'error'], {
                 message: error?.message || 'An error was encountered.',
@@ -117,10 +139,11 @@ const tokensSlice = createSlice({
 export default tokensSlice;
 
 export const actions = {
+    fetchToken,
     fetchTokens,
     ...tokensSlice.actions
 };
-export const reducer = tokensSlice.reducer; 
+export const reducer = tokensSlice.reducer;
 
 const getAccountIdParam = createParameterSelector((params) => params.accountId);
 
@@ -155,15 +178,21 @@ export const selectOneTokenFromOwnedTokens = createSelector(
 
 export const selectTokensWithMetadataForAccountId = createSelector(
     [selectAllContractMetadata, selectOwnedTokensForAccount],
-    (allContractMetadata, ownedTokensForAccount) => Object.entries(ownedTokensForAccount)
-        .filter(([_, { balance }]) => !new BN(balance).isZero())
-        .sort(([a], [b]) => allContractMetadata[a].name.localeCompare(allContractMetadata[b].name))
-        .map(([contractName, { balance }]) => ({
-            ...initialOwnedTokenState,
-            contractName,
-            balance,
-            ...(allContractMetadata[contractName] || {})
-        }))
+    (allContractMetadata, ownedTokensForAccount) =>
+        Object.entries(ownedTokensForAccount)
+            .filter(([_, { balance }]) => !new BN(balance).isZero())
+            .sort(([a], [b]) =>
+                allContractMetadata[a].name.localeCompare(
+                    allContractMetadata[b].name
+                )
+            )
+            .map(([contractName, { balance }]) => ({
+                ...initialOwnedTokenState,
+                contractName,
+                balance,
+                onChainFTMetadata: allContractMetadata[contractName] || {},
+                coingeckoMetadata: {},
+            }))
 );
 
 export const selectTokensLoading = createSelector(
@@ -175,4 +204,13 @@ export const selectTokensLoading = createSelector(
 const selectOneTokenLoading = createSelector(
     [selectOneTokenFromOwnedTokens],
     (token) => token.loading
+);
+
+export const selectNEARAsTokenWithMetadata = createSelector(
+    [selectBalance, selectNearTokenFiatValueUSD],
+    (nearBalance, nearTokenFiatValueUSD) => ({
+        balance: nearBalance?.balanceAvailable || "",
+        onChainFTMetadata: { symbol: "NEAR" },
+        coingeckoMetadata: { usd: nearTokenFiatValueUSD },
+    })
 );

@@ -1,5 +1,5 @@
 import { getRouter } from 'connected-react-router';
-import { parse as parseQuery } from 'query-string';
+import { parse as parseQuery, stringify } from 'query-string';
 import React, { Component } from 'react';
 import { Translate } from 'react-localize-redux';
 import { connect } from 'react-redux';
@@ -17,6 +17,7 @@ import {
 import { clearLocalAlert } from '../../redux/actions/status';
 import { selectAccountSlice } from '../../redux/slices/account';
 import { selectStatusLocalAlert, selectStatusMainLoader } from '../../redux/slices/status';
+import { selectActionsPending } from '../../redux/slices/status';
 import parseFundingOptions from '../../utils/parseFundingOptions';
 import Container from '../common/styled/Container.css';
 import RecoverAccountSeedPhraseForm from './RecoverAccountSeedPhraseForm';
@@ -95,7 +96,7 @@ class RecoverAccountSeedPhrase extends Component {
 
         const fundWithExistingAccount = parseQuery(location.search, { parseBooleans: true }).fundWithExistingAccount;
         if (fundWithExistingAccount) {
-            const createNewAccountParams = new URLSearchParams(JSON.parse(fundWithExistingAccount)).toString();
+            const createNewAccountParams = stringify(JSON.parse(fundWithExistingAccount));
             redirectTo(`/fund-with-existing-account?${createNewAccountParams}`);
         } else {
             const options = parseFundingOptions(location.search);
@@ -146,7 +147,8 @@ const mapStateToProps = (state, { match }) => ({
     router: getRouter(state),
     seedPhrase: match.params.seedPhrase || '',
     localAlert: selectStatusLocalAlert(state),
-    mainLoader: selectStatusMainLoader(state)
+    mainLoader: selectStatusMainLoader(state),
+    findMyAccountSending: selectActionsPending(state, { types: ['RECOVER_ACCOUNT_SEED_PHRASE', 'REFRESH_ACCOUNT_OWNER'] })
 });
 
 export const RecoverAccountSeedPhraseWithRouter = connect(

@@ -104,18 +104,20 @@ export async function transferAllFromLockup(missingAmount) {
     if (missingAmount && !liquidBalance.gt(missingAmount)) {
         throw new WalletError('Not enough tokens.', 'signAndSendTransactions.notEnoughTokens');
     }
-
-    console.info('Attempting to transfer from lockup account ID:', lockupAccountId);
-    await this.wrappedAccount.functionCall({
-        contractId: lockupAccountId,
-        methodName: "transfer",
-        args: {
-            // NOTE: Move all the liquid tokens to minimize transactions in the long run
-            amount: liquidBalance.toString(),
-            receiver_id: this.wrappedAccount.accountId,
-        },
-        gas: BASE_GAS.mul(new BN(2)),
-    });
+    
+    if(liquidBalance.gt(new BN(0))) {
+        console.info('Attempting to transfer from lockup account ID:', lockupAccountId);
+        await this.wrappedAccount.functionCall({
+            contractId: lockupAccountId,
+            methodName: "transfer",
+            args: {
+                // NOTE: Move all the liquid tokens to minimize transactions in the long run
+                amount: liquidBalance.toString(),
+                receiver_id: this.wrappedAccount.accountId,
+            },
+            gas: BASE_GAS.mul(new BN(2)),
+        });
+    }
 
     const lockedBalance = new BN(await this.wrappedAccount.viewFunction(lockupAccountId, 'get_locked_amount'));
     if (lockedBalance.eq(new BN(0))) {
@@ -204,6 +206,7 @@ async function getAccountBalance(limitedAccountData = false) {
 
         const { transfer_poll_account_id, transfers_timestamp } = transferInformation;
         let transfersTimestamp = transfer_poll_account_id ? await this.viewFunction(transfer_poll_account_id, 'get_result') : transfers_timestamp;
+        let areTransfersEnabled = !!transfersTimestamp;
         transfersTimestamp = transfersTimestamp || (Date.now() * 1000000).toString();
         const { code_hash: lockupContractCodeHash } = await lockupAccount.state();
 
@@ -266,14 +269,11 @@ async function getAccountBalance(limitedAccountData = false) {
 
         // if acc is deletable (nothing locked && nothing stake) you can transfer the whole amount ohterwise get_liquid_owners_balance
         const isAccDeletable = lockedAmount.isZero() && stakedBalanceLockup.isZero();
-        const liquidOwnersBalance = isAccDeletable
+        const MIN_BALANCE_FOR_STORAGE = getLockupMinBalanceForStorage(lockupContractCodeHash);
+        const liquidOwnersBalanceTransfersEnabled = isAccDeletable
             ? new BN(lockupBalance.total)
-            : new BN(
-                  await this.wrappedAccount.viewFunction(
-                      lockupAccountId,
-                      "get_liquid_owners_balance"
-                  )
-              );
+            : BN.min(ownersBalance, new BN(lockupBalance.total).sub(new BN(MIN_BALANCE_FOR_STORAGE)));
+        const liquidOwnersBalance = areTransfersEnabled ? liquidOwnersBalanceTransfersEnabled : new BN(0);
 
         const available = BN.max(new BN(0), new BN(balance.available).add(new BN(liquidOwnersBalance)).sub(new BN(MIN_BALANCE_FOR_GAS)));
 
@@ -289,7 +289,7 @@ async function getAccountBalance(limitedAccountData = false) {
             stakedBalanceLockup: stakedBalanceLockup,
             lockupAccountId,
             stakedBalanceMainAccount,
-            lockupReservedForStorage: getLockupMinBalanceForStorage(lockupContractCodeHash)
+            lockupReservedForStorage: MIN_BALANCE_FOR_STORAGE
         };
     } catch (error) {
         if (error.message.match(/ccount ".+" doesn't exist/) || error.message.includes('does not exist while viewing') || error.message.includes('cannot find contract code for account')) {
@@ -340,7 +340,7 @@ async function viewLockupState(connection, lockupAccountId) {
         transferInformation = {
             transfer_poll_account_id: reader.readString()
         };
-    };
+    }
     let vestingType = reader.readU8();
     let vestingInformation = null;
     if (vestingType === 1) {

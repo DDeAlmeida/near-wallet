@@ -9,13 +9,20 @@ import {
 } from '../../config';
 import { getLockupAccountId, getLockupMinBalanceForStorage } from '../../utils/account-with-lockup';
 import { showAlert } from '../../utils/alerts';
-import { 
+import {
+    MAINNET,
+    getValidatorRegExp,
+    getValidationVersion,
+    TESTNET
+} from '../../utils/constants';
+import { setStakingAccountSelected } from '../../utils/localStorage';
+import {
     STAKING_AMOUNT_DEVIATION,
     MIN_DISPLAY_YOCTO,
     ZERO,
     EXPLORER_DELAY,
     ACCOUNT_DEFAULTS,
-    getStakingDeposits, 
+    getStakingDeposits,
     lockupMethods,
     updateStakedBalance,
     signAndSendTransaction,
@@ -24,12 +31,12 @@ import {
 } from '../../utils/staking';
 import { wallet } from '../../utils/wallet';
 import { WalletError } from '../../utils/walletError';
-import { 
+import {
     selectAccountId,
     selectAccountSlice
 } from '../slices/account';
 import { selectAllAccountsByAccountId } from '../slices/allAccounts';
-import { 
+import {
     selectStakingAccountsMain,
     selectStakingMainAccountId,
     selectStakingLockupAccountId,
@@ -41,6 +48,7 @@ import {
     selectStakingFindContractByValidatorId,
     selectStakingLockupId
 } from '../slices/staking';
+import { selectStakingCurrentAccountbyAccountId } from '../slices/staking';
 import { getBalance } from './account';
 
 const {
@@ -257,12 +265,17 @@ export const { staking } = createActions({
 
                     totalStaked = totalStaked.add(new BN(validator.staked));
                     totalUnclaimed = totalUnclaimed.add(new BN(validator.unclaimed));
+                    const networkId = wallet.connection.provider.connection.url.indexOf(MAINNET) > -1 ? MAINNET : TESTNET;
+
+                    validator.version = getValidationVersion(networkId, validator.accountId);
                 } catch (e) {
                     if (e.message.indexOf('cannot find contract code') === -1) {
                         console.warn('Error getting data for validator', validator.accountId, e);
                     }
                 }
             }));
+            
+            // TODO: calculate APY
 
             return {
                 accountId,
@@ -288,7 +301,7 @@ export const { staking } = createActions({
             if (totalUnstaked.lt(new BN(parseNearAmount('0.002')))) {
                 totalUnstaked = ZERO.clone();
             }
-            
+
             // validator specific
             const selectedValidator = await contract.get_staking_pool_account_id();
             if (!selectedValidator) {
@@ -299,7 +312,7 @@ export const { staking } = createActions({
                     mainAccountId: exAccountId
                 };
             }
-            let validator = validators.find((validator) => 
+            let validator = validators.find((validator) =>
                 validator.accountId === selectedValidator
             );
 
@@ -351,36 +364,38 @@ export const { staking } = createActions({
             };
         },
         UPDATE_CURRENT: null,
-        GET_LOCKUP: async (accountId) => {
-            let lockupId;
-            if (REACT_APP_USE_TESTINGLOCKUP && accountId.length < 64) {
-                lockupId = `testinglockup.${accountId}`;
-            } else {
-                lockupId = getLockupAccountId(accountId);
-            }
+        GET_LOCKUP: [
+            async ({ accountId }) => {
+                let lockupId;
+                if (REACT_APP_USE_TESTINGLOCKUP && accountId.length < 64) {
+                    lockupId = `testinglockup.${accountId}`;
+                } else {
+                    lockupId = getLockupAccountId(accountId);
+                }
 
-            let contract;
-            try {
-                await (await new Account(wallet.connection, lockupId)).state();
-                contract = await new Contract(await wallet.getAccount(accountId), lockupId, { ...lockupMethods });
-            } catch (e) {
-                return;
-            }
+                let contract;
+                try {
+                    await (await new Account(wallet.connection, lockupId)).state();
+                    contract = await new Contract(await wallet.getAccount(accountId), lockupId, { ...lockupMethods });
+                } catch (e) {
+                    return;
+                }
 
-            return { contract, lockupId, accountId };
-        },
+                return { contract, lockupId, accountId };
+            },
+            ({ accountId, isOwner }) => ({ accountId, isOwner })
+        ],
         GET_VALIDATORS: async (accountIds, accountId) => {
             const { current_validators, next_validators, current_proposals } = await wallet.connection.provider.validators();
             const currentValidators = shuffle(current_validators).map(({ account_id }) => account_id);
-            
             if (!accountIds) {
                 const rpcValidators = [...current_validators, ...next_validators, ...current_proposals].map(({ account_id }) => account_id);
 
-                const networkId = wallet.connection.provider.connection.url.indexOf('mainnet') > -1 ? 'mainnet' : 'testnet';
+                const networkId = wallet.connection.provider.connection.url.indexOf(MAINNET) > -1 ? MAINNET : TESTNET;
                 const allStakingPools = (await fetch(`${ACCOUNT_HELPER_URL}/stakingPools`).then((r) => r.json()));
-
+                const prefix = getValidatorRegExp(networkId);
                 accountIds = [...new Set([...rpcValidators, ...allStakingPools])]
-                    .filter((v) => v.indexOf('nfvalidator') === -1 && v.indexOf(networkId === 'mainnet' ? '.near' : '.m0') > -1);
+                    .filter((v) => v.indexOf('nfvalidator') === -1 && v.match(prefix));
             }
 
             const currentAccount = wallet.getAccountBasic(accountId);
@@ -396,6 +411,9 @@ export const { staking } = createActions({
                         };
                         const fee = validator.fee = await validator.contract.get_reward_fee_fraction();
                         fee.percentage = +(fee.numerator / fee.denominator * 100).toFixed(2);
+                        const networkId = wallet.connection.provider.connection.url.indexOf(MAINNET) > -1 ? MAINNET : TESTNET;
+
+                        validator.version = getValidationVersion(networkId, validator.accountId);
                         return validator;
                     } catch (e) {
                         console.warn('Error getting fee for validator %s: %s', account_id, e);
@@ -424,9 +442,12 @@ const handleGetAccounts = () => async (dispatch, getState) => {
     return await dispatch(staking.getAccounts(accounts));
 };
 
-export const handleGetLockup = (accountId) => async (dispatch, getState) => {
+export const handleGetLockup = (externalAccountId) => async (dispatch, getState) => {
     try {
-        await dispatch(staking.getLockup(accountId || selectAccountId(getState())));
+        await dispatch(staking.getLockup({
+            accountId: externalAccountId || selectAccountId(getState()),
+            isOwner: !externalAccountId || externalAccountId === selectAccountId(getState())
+        }));
     } catch(e) {
         if (!/No contract for account/.test(e.message)) {
             throw e;
@@ -498,5 +519,17 @@ export const updateStaking = (currentAccountId, recentlyStakedValidators) => asy
         await dispatch(handleStakingUpdateLockup());
     }
 
-    dispatch(staking.updateCurrent(currentAccountId || accountId));
+    let currentAccount = selectStakingCurrentAccountbyAccountId(getState(), { accountId: currentAccountId });
+    
+    if (!currentAccount) {
+        currentAccount = selectStakingCurrentAccountbyAccountId(getState(), { accountId });
+        setStakingAccountSelected(accountId);
+    }
+
+    dispatch(staking.updateCurrent({ currentAccount }));
+};
+
+export const handleUpdateCurrent = (accountId) => async (dispatch, getState) => {
+    let currentAccount = selectStakingCurrentAccountbyAccountId(getState(), { accountId });
+    dispatch(staking.updateCurrent({ currentAccount }));
 };

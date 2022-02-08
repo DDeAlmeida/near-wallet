@@ -1,6 +1,8 @@
 import { createSelector } from "reselect";
 
-const SLICE_NAME = 'account';
+import { isImplicitAccount } from "../../../utils/account";
+
+export const SLICE_NAME = 'account';
 
 // Top level selectors
 export const selectAccountSlice = (state) => state[SLICE_NAME];
@@ -8,7 +10,11 @@ export const selectAccountSlice = (state) => state[SLICE_NAME];
 // Second level selectors 
 export const selectAccountId = createSelector(selectAccountSlice, (account) => account.accountId);
 
+export const selectActiveAccountIdIsImplicitAccount = createSelector(selectAccountSlice, (account) => isImplicitAccount(account.accountId));
+
 export const selectAccountHas2fa = createSelector(selectAccountSlice, (account) => account.has2fa);
+
+export const selectAccountHasLockup = createSelector(selectAccountSlice, (account) => account.hasLockup);
 
 export const selectAccountAuthorizedApps = createSelector(selectAccountSlice, (account) => account.authorizedApps || []);
 
@@ -16,8 +22,11 @@ export const selectAccountFullAccessKeys = createSelector(selectAccountSlice, (a
 
 export const selectAccountLedgerKey = createSelector(selectAccountSlice, (account) => account.ledgerKey);
 
+export const selectAccountGlobalAlertPreventClear = createSelector(selectAccountSlice, (account) => account.globalAlertPreventClear);
+
 // balance - state
 export const selectBalance = createSelector(selectAccountSlice, (account) => account.balance || {});
+export const selectAvailableBalance = createSelector(selectBalance, (balance) => balance.balanceAvailable);
 
 export const selectAccountBalanceLockedAmount = createSelector(selectBalance, (balance) => balance.lockedAmount || '');
 

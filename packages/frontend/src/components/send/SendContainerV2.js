@@ -14,7 +14,7 @@ import Review from './components/views/Review';
 import SelectToken from './components/views/SelectToken';
 import Success from './components/views/Success';
 
-const { getFormattedTokenAmount, getParsedTokenAmount } = FungibleTokens;
+const { getFormattedTokenAmount, getParsedTokenAmount, getUniqueTokenIdentity } = FungibleTokens;
 
 export const VIEWS = {
     ENTER_AMOUNT: 'enterAmount',
@@ -106,8 +106,8 @@ const SendContainerV2 = ({
     useEffect(() => {
         // fungibleTokens contains balance data for each token -- we need to update local state every time it changes
         // TODO: Add a `byIdentity` reducer for faster lookups than .find()
-        const targetToken = fungibleTokens.find(({ contractName, symbol }) => {
-            return (contractName && contractName === selectedToken.contractName) || symbol === selectedToken.symbol;
+        const targetToken = fungibleTokens.find(({ contractName, onChainFTMetadata }) => {
+            return (contractName && contractName === selectedToken.contractName) || onChainFTMetadata?.symbol === selectedToken.onChainFTMetadata?.symbol;
         });
 
         setSelectedToken(targetToken);
@@ -118,7 +118,7 @@ const SendContainerV2 = ({
             setIsMaxAmount(false);
             setUserInputAmount('');
         }
-    }, [selectedToken]);
+    }, [getUniqueTokenIdentity(selectedToken)]);
 
     useEffect(() => window.scrollTo(0, 0), [activeView]);
 
@@ -129,7 +129,7 @@ const SendContainerV2 = ({
         setIsMaxAmount(false);
     }, [accountId]);
 
-    const getRawAmount = () => getParsedTokenAmount(userInputAmount, selectedToken.symbol, selectedToken.decimals);
+    const getRawAmount = () => getParsedTokenAmount(userInputAmount, selectedToken.onChainFTMetadata?.symbol, selectedToken.onChainFTMetadata?.decimals);
     const isValidAmount = () => {
         // TODO: Handle rounding issue that can occur entering exact available amount
         if (isMaxAmount === true) {
@@ -157,7 +157,7 @@ const SendContainerV2 = ({
                         setUserInputAmount(userInputAmount);
                     }}
                     onSetMaxAmount={() => {
-                        const formattedTokenAmount = getFormattedTokenAmount(selectedToken.balance, selectedToken.symbol, selectedToken.decimals);
+                        const formattedTokenAmount = getFormattedTokenAmount(selectedToken.balance, selectedToken.onChainFTMetadata?.symbol, selectedToken.onChainFTMetadata?.decimals);
 
                         if (!new BN(selectedToken.balance).isZero()) {
                             Mixpanel.track("SEND Use max amount");
@@ -194,7 +194,7 @@ const SendContainerV2 = ({
                 <EnterReceiver
                     onClickGoBack={() => setActiveView(VIEWS.ENTER_AMOUNT)}
                     onClickCancel={() => redirectTo('/')}
-                    amount={getRawAmount()}
+                    amount={isMaxAmount ? selectedToken.balance : getRawAmount()}
                     selectedToken={selectedToken}
                     handleChangeReceiverId={(receiverId) => setReceiverId(receiverId)}
                     receiverId={receiverId}
@@ -236,9 +236,9 @@ const SendContainerV2 = ({
             return (
                 <Success
                     amount={
-                        selectedToken.symbol === 'NEAR'
+                        selectedToken.onChainFTMetadata?.symbol === 'NEAR'
                         ? getNearAndFiatValue(getRawAmount(), nearTokenFiatValueUSD)
-                        : `${userInputAmount} ${selectedToken.symbol}`
+                        : `${userInputAmount} ${selectedToken.onChainFTMetadata?.symbol}`
                     }
                     receiverId={receiverId}
                     onClickContinue={() => redirectTo('/')}

@@ -8,10 +8,10 @@ import { Mixpanel } from '../../mixpanel/index';
 import { getBalance } from '../../redux/actions/account';
 import {
     updateStaking,
-    staking as stakingActions,
-    handleStakingAction
+    handleStakingAction,
+    handleUpdateCurrent
 } from '../../redux/actions/staking';
-import { selectAccountHas2fa, selectAccountId, selectBalance } from '../../redux/slices/account';
+import { selectAccountHas2fa, selectAccountHasLockup, selectAccountId, selectBalance } from '../../redux/slices/account';
 import { selectLedgerHasLedger } from '../../redux/slices/ledger';
 import { selectStakingSlice } from '../../redux/slices/staking';
 import { selectStatusSlice } from '../../redux/slices/status';
@@ -78,7 +78,7 @@ const StyledContainer = styled(Container)`
     }
 
     .transfer-money-icon {
-        display block;
+        display: block;
         margin: 50px auto;
     }
 
@@ -172,8 +172,8 @@ export function StakingContainer({ history, match }) {
     const hasLedger = useSelector(selectLedgerHasLedger);
     const staking = useSelector(selectStakingSlice);
     const nearTokenFiatValueUSD = useSelector(selectNearTokenFiatValueUSD);
+    const hasLockup = useSelector(selectAccountHasLockup);
 
-    const hasLockup = !!staking.lockupId;
     const { currentAccount } = staking;
     const stakingAccounts = staking.accounts;
     const validators = staking.allValidators;
@@ -199,7 +199,7 @@ export function StakingContainer({ history, match }) {
 
     const handleSwitchAccount = (accountId) => {
         setStakingAccountSelected(accountId);
-        dispatch(stakingActions.updateCurrent(accountId));
+        dispatch(handleUpdateCurrent(accountId));
     };
 
     const handleAction = async (action, validator, amount) => {
@@ -211,7 +211,7 @@ export function StakingContainer({ history, match }) {
                     ? validator
                     : selectedValidator || validator;
                 await dispatch(handleStakingAction(action, properValidator, amount));
-                Mixpanel.people.set({[`last_${action}_time`]: new Date().toString()});
+                Mixpanel.people.set({ [`last_${action}_time`]: new Date().toString() });
             }
         );
     };
@@ -277,8 +277,8 @@ export function StakingContainer({ history, match }) {
                         exact
                         path='/staking/:validator'
                         render={(props) => (
-                            <Validator 
-                                {...props} 
+                            <Validator
+                                {...props}
                                 validator={validator}
                                 onWithdraw={handleAction}
                                 loading={status.mainLoader}
@@ -295,7 +295,7 @@ export function StakingContainer({ history, match }) {
                                 {...props}
                                 action='stake'
                                 handleStakingAction={handleAction}
-                                availableBalance={totalUnstaked} 
+                                availableBalance={totalUnstaked}
                                 validator={validator}
                                 loading={status.mainLoader}
                                 hasLedger={hasLedger}

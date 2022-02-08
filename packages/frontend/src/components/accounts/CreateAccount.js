@@ -10,12 +10,11 @@ import { Mixpanel } from '../../mixpanel/index';
 import {
     checkNearDropBalance,
     checkNewAccount,
-    createNewAccount,
     redirectTo,
     refreshAccount
 } from '../../redux/actions/account';
 import { clearLocalAlert } from '../../redux/actions/status';
-import { selectAccountSlice } from '../../redux/slices/account';
+import { selectAccountSlice, selectActiveAccountIdIsImplicitAccount } from '../../redux/slices/account';
 import { selectStatusLocalAlert, selectStatusMainLoader } from '../../redux/slices/status';
 import { selectNearTokenFiatValueUSD } from '../../redux/slices/tokenFiatValues';
 import isMobile from '../../utils/isMobile';
@@ -183,7 +182,8 @@ class CreateAccount extends Component {
             fundingContract,
             fundingKey,
             nearTokenFiatValueUSD,
-            locationSearch
+            locationSearch,
+            activeAccountIdIsImplicit
         } = this.props;
         
         const isLinkDrop = fundingContract && fundingKey;
@@ -243,7 +243,15 @@ class CreateAccount extends Component {
             return (
                 <StyledContainer className='small-centered border'>
                     <form onSubmit={e => { this.handleCreateAccount(); e.preventDefault(); }} autoComplete='off'>
-                        <h1><Translate id='createAccount.pageTitle' /></h1>
+                        <h1>
+                            <Translate
+                                id={
+                                    activeAccountIdIsImplicit
+                                        ? "createAccount.addACustomAddress"
+                                        : "createAccount.pageTitle"
+                                }
+                            />
+                        </h1>
                         <h2><Translate id='createAccount.pageText' /></h2>
                         <h4 className='small'><Translate id='createAccount.accountIdInput.title' /></h4>
                         <AccountFormAccountId
@@ -295,7 +303,6 @@ class CreateAccount extends Component {
 
 const mapDispatchToProps = {
     checkNewAccount,
-    createNewAccount,
     clearLocalAlert,
     refreshAccount,
     checkNearDropBalance,
@@ -310,7 +317,8 @@ const mapStateToProps = (state, { match }) => ({
     fundingKey: match.params.fundingKey,
     fundingAccountId: match.params.fundingAccountId,
     nearTokenFiatValueUSD: selectNearTokenFiatValueUSD(state),
-    locationSearch: getSearch(state)
+    locationSearch: getSearch(state),
+    activeAccountIdIsImplicit: selectActiveAccountIdIsImplicitAccount(state)
 });
 
 export const CreateAccountWithRouter = connect(
